@@ -33,17 +33,6 @@ def render_sides(render_types, rndr, rndr_smpl, y, save_folder, subject, smpl_ty
             rndr, 2, os.path.join(save_folder, subject, f"depth_{side}", f'{y:03d}.png')
         )
 
-    if smpl_type != "none":
-
-        opengl_util.render_result(
-            rndr_smpl, 1, os.path.join(save_folder, subject, f"T_normal_{side}", f'{y:03d}.png')
-        )
-
-        if "depth" in render_types:
-            opengl_util.render_result(
-                rndr_smpl, 2, os.path.join(save_folder, subject, f"T_depth_{side}", f'{y:03d}.png')
-            )
-
 
 def render_subject(subject, dataset, save_folder, rotation, size, render_types, egl):
 
@@ -59,11 +48,10 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
         scale = 100.0
         up_axis = 1
         smpl_type = "smplx"
+        rnsr_smpl = None
 
-        mesh_file = os.path.join(f'./data/{dataset}/scans/{subject}', f'{subject}.obj')
-        smplx_file = f'./data/{dataset}/{smpl_type}/{subject}.obj'
-        tex_file = f'./data/{dataset}/scans/{subject}/material0.jpeg'
-        fit_file = f'./data/{dataset}/{smpl_type}/{subject}.pkl'
+        mesh_file = f'{dataset}/{subject}/{subject}.obj'
+        tex_file = f'{dataset}/{subject}/material0.jpeg'
 
         vertices, faces, normals, faces_normals, textures, face_textures = load_scan(
             mesh_file, with_normal=True, with_texture=True
@@ -71,36 +59,31 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
 
         # center
         scan_scale = 1.8 / (vertices.max(0)[up_axis] - vertices.min(0)[up_axis])
-        rescale_fitted_body, joints = load_fit_body(
-            fit_file, scale, smpl_type=smpl_type, smpl_gender='male'
-        )
-
-        os.makedirs(os.path.dirname(smplx_file), exist_ok=True)
-        trimesh.Trimesh(rescale_fitted_body.vertices / scale,
-                        rescale_fitted_body.faces).export(smplx_file)
+        print(size)
 
         vertices *= scale
         vmin = vertices.min(0)
         vmax = vertices.max(0)
-        vmed = joints[0]
+        vmed = np.median(vertices, axis=0) # change from joint0 to vertices median location
         vmed[up_axis] = 0.5 * (vmax[up_axis] + vmin[up_axis])
 
-        rndr_smpl = ColorRender(width=size, height=size, egl=egl)
-        rndr_smpl.set_mesh(
-            rescale_fitted_body.vertices, rescale_fitted_body.faces, rescale_fitted_body.vertices,
-            rescale_fitted_body.vertex_normals
-        )
-        rndr_smpl.set_norm_mat(scan_scale, vmed)
-
+        print("++++++++++++++++++++++++++++", vmed.shape)
         # camera
         cam = Camera(width=size, height=size)
         cam.ortho_ratio = 0.4 * (512 / size)
 
+        print("Set cameras")
+
         prt, face_prt = prt_util.computePRT(mesh_file, scale, 10, 2)
         rndr = PRTRender(width=size, height=size, ms_rate=16, egl=egl)
+        rndr_smpl = None
+
+        print("Set PRTRender")
 
         # texture
         texture_image = cv2.cvtColor(cv2.imread(tex_file), cv2.COLOR_BGR2RGB)
+
+        print("Get Texture Image: ", texture_image.shape)
 
         tan, bitan = compute_tangent(normals)
         rndr.set_norm_mat(scan_scale, vmed)
@@ -119,6 +102,8 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
         )
         rndr.set_albedo(texture_image)
 
+        print("Set Mesh")
+
         for y in range(0, 360, 360 // rotation):
 
             cam.near = -100
@@ -130,10 +115,6 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
 
             rndr.rot_matrix = R
             rndr.set_camera(cam)
-
-            if smpl_type != "none":
-                rndr_smpl.rot_matrix = R
-                rndr_smpl.set_camera(cam)
 
             dic = {'ortho_ratio': cam.ortho_ratio, 'scale': scan_scale, 'center': vmed, 'R': R}
 
@@ -160,12 +141,12 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
             os.makedirs(os.path.dirname(export_calib_file), exist_ok=True)
             np.savetxt(export_calib_file, calib)
 
+            print(f"Export calib to {export_calib_file}")
+
             # ==================================================================
 
             # front render
             rndr.display()
-            rndr_smpl.display()
-
             opengl_util.render_result(
                 rndr, 0, os.path.join(save_folder, subject, 'render', f'{y:03d}.png')
             )
@@ -178,10 +159,8 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
             cam.far = -100
             cam.sanity_check()
             rndr.set_camera(cam)
-            rndr_smpl.set_camera(cam)
 
             rndr.display()
-            rndr_smpl.display()
 
             render_sides(render_types, rndr, rndr_smpl, y, save_folder, subject, smpl_type, "B")
 
@@ -192,7 +171,7 @@ def render_subject(subject, dataset, save_folder, rotation, size, render_types, 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-dataset', '--dataset', type=str, default="thuman2", help='dataset name')
+    parser.add_argument('-dataset', '--dataset', type=str, default="/home/yuxuan/project/THuman2.0_Release", help='dataset name')
     parser.add_argument('-out_dir', '--out_dir', type=str, default="./debug", help='output dir')
     parser.add_argument('-num_views', '--num_views', type=int, default=36, help='number of views')
     parser.add_argument('-size', '--size', type=int, default=512, help='render size')
@@ -210,7 +189,7 @@ if __name__ == "__main__":
     else:
         os.environ["PYOPENGL_PLATFORM"] = ""
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     # shoud be put after PYOPENGL_PLATFORM
     import lib.renderer.opengl_util as opengl_util
@@ -229,19 +208,19 @@ if __name__ == "__main__":
     os.makedirs(current_out_dir, exist_ok=True)
     print(f"Output dir: {current_out_dir}")
 
-    subjects = np.loadtxt(f"./data/{args.dataset}/all.txt", dtype=str)
-
+    subjects = [subject for subject in os.listdir(args.dataset)]
+    
     if args.debug:
         subjects = subjects[:2]
         render_types = ["light", "normal", "depth"]
     else:
         random.shuffle(subjects)
-        render_types = ["light", "normal"]
+        render_types = ["light", "normal", "depth"]
 
     print(f"Rendering types: {render_types}")
 
-    NUM_GPUS = 2
-    PROC_PER_GPU = mp.cpu_count() // NUM_GPUS
+    NUM_GPUS = 1
+    PROC_PER_GPU = 8 // NUM_GPUS # mp.cpu_count() // NUM_GPUS
 
     queue = Queue()
 

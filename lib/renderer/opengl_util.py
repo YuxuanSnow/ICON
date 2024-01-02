@@ -23,6 +23,7 @@ import cv2
 import math
 import random
 import numpy as np
+from PIL import Image
 
 
 def render_result(rndr, shader_id, path, mask=False):
@@ -37,7 +38,16 @@ def render_result(rndr, shader_id, path, mask=False):
         cam_render[:, :, -1] -= 0.5
         cam_render[:, :, -1] *= 2.0
         if not mask:
-            cv2.imwrite(path, np.uint8(255.0 / 2.0 * (cam_render + 1.0)))
+            # normalized_depth = (cam_render[:,:,0] + 1) / 2 # map to [0,1]
+            # near_plane = -1  # Near plane distance in your scene
+            # far_plane = 1  # Far plane distance in your scene
+            # actual_depth = normalized_depth * (far_plane - near_plane) + near_plane
+            # actual_depth = normalized_depth * 1000
+            actual_depth = (cam_render[:, :, 0] + 5) * 1000
+            depth_image = Image.fromarray(actual_depth.astype('uint32'), 'I')
+            depth_image.save(path)
+            # cv2.imwrite(path, np.uint8(255.0 / 2.0 * (cam_render + 1.0)))
+            cv2.imwrite(path.replace('png', 'jpg'), np.uint8(-1.0 * cam_render[:, :, [3]]))
         else:
             cv2.imwrite(path, np.uint8(-1.0 * cam_render[:, :, [3]]))
 

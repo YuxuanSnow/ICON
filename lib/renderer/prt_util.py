@@ -155,10 +155,16 @@ def computePRT(mesh_path, scale, n, order):
 
             delta = 1e-3 * min(mesh.bounding_box.extents)
 
+            print("Ray tracing...")
+            print(mesh_path)
+            print((origins + delta * normals).shape ,vectors.shape)
+
             hits = mesh.ray.intersects_any(origins + delta * normals, vectors)
+
+            print("Done")
             nohits = np.logical_and(front, np.logical_not(hits))
 
-            PRT = (nohits.astype(np.float) * dots)[:, None] * SH
+            PRT = (nohits.astype(np.float32) * dots)[:, None] * SH
 
             if PRT_all is not None:
                 PRT_all += (PRT.reshape(-1, n, SH.shape[1]).sum(1))
